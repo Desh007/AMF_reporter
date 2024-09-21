@@ -3,6 +3,7 @@ package com.example.report.service;
 
 import com.example.report.model.PullRequest;
 import com.opencsv.CSVWriter;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +20,7 @@ public class ReportService {
 
     private static final Logger logger = LoggerFactory.getLogger(ReportService.class);
     private final OkHttpClient httpClient = new OkHttpClient();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${bitbucket.api.url}")
     private String bitbucketApiUrl;
@@ -31,11 +33,13 @@ public class ReportService {
 
     public List<PullRequest> getOpenAutomergeFailures(String releaseBranch) {
         List<PullRequest> pullRequests = new ArrayList<>();
-        int page = 1;
+        int limit = 100; // Number of items per request
+        int start = 0; // Starting index for pagination
 
         try {
             while (true) {
-                String url = String.format("%s/repositories/{workspace}/{repo_slug}/pullrequests?state=OPEN&pagelen=100&page=%d", bitbucketApiUrl, page);
+                String url = String.format("%s/repositories/{workspace}/{repo_slug}/pullrequests?state=OPEN&limit=%d&start=%d", 
+                        bitbucketApiUrl, limit, start);
                 Request request = new Request.Builder()
                         .url(url.replace("{workspace}", "your_workspace").replace("{repo_slug}", "your_repo_slug"))
                         .header("Authorization", Credentials.basic(bitbucketUsername, bitbucketPassword))
@@ -64,9 +68,17 @@ public class ReportService {
                                 logger.debug("Added PR: {}", pr);
                             }
                         }
-                        page++;
+
+                        // Update start for the next request
+                        start += limit;
+
+                        // Check if we are on the last page
+                        if (bitbucketResponse.isLastPage()) {
+                            logger.info("Reached the last page.");
+                            break;
+                        }
                     } else {
-                        logger.info("No more pull requests found or reached the last page.");
+                        logger.info("No more pull requests found.");
                         break;
                     }
                 } catch (IOException e) {
@@ -80,10 +92,8 @@ public class ReportService {
         return pullRequests;
     }
 
-    private BitbucketResponse parseResponse(String responseBody) {
-        // Implement JSON parsing to convert the responseBody to BitbucketResponse object
-        // You can use a library like Jackson or Gson here
-        return new ObjectMapper().readValue(responseBody, BitbucketResponse.class);
+    private BitbucketResponse parseResponse(String responseBody) throws IOException {
+        return objectMapper.readValue(responseBody, BitbucketResponse.class);
     }
 
     public void writeReportToCsv(List<PullRequest> pullRequests, String filePath) throws IOException {
