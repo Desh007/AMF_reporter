@@ -1,0 +1,68 @@
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+@Service
+public class ApiService {
+
+    private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
+
+    public ApiService(RestTemplate restTemplate, ObjectMapper objectMapper) {
+        this.restTemplate = restTemplate;
+        this.objectMapper = objectMapper;
+    }
+
+    public void processIds(Map<String, List<Integer>> inputJson) throws Exception {
+        List<Integer> ids = inputJson.get("ids"); // Extract IDs
+        List<JsonNode> responseList = new ArrayList<>();
+
+        for (int i = 0; i < ids.size(); i++) {
+            int id = ids.get(i);
+            String url = "https://api.example.com/data"; // Replace with actual API
+            ResponseEntity<String> responseEntity = restTemplate.postForEntity(url, id, String.class);
+            JsonNode jsonResponse = objectMapper.readTree(responseEntity.getBody());
+
+            if (jsonResponse.isArray()) {
+                responseList.add(jsonResponse);
+            }
+
+            // Process every 3 responses
+            if (responseList.size() == 3 || (i == ids.size() - 1 && !responseList.isEmpty())) {
+                JsonNode combinedJson = mergeJsonResponses(responseList);
+                InputStream inputStream = convertToInputStream(combinedJson.toString());
+                
+                // Pass InputStream to processing method
+                processInputStream(inputStream);
+
+                responseList.clear(); // Reset for next batch
+            }
+        }
+    }
+
+    private JsonNode mergeJsonResponses(List<JsonNode> responseList) {
+        List<JsonNode> mergedList = new ArrayList<>();
+        for (JsonNode response : responseList) {
+            response.forEach(mergedList::add); // Flatten arrays
+        }
+        return objectMapper.valueToTree(mergedList);
+    }
+
+    private InputStream convertToInputStream(String jsonString) {
+        return new ByteArrayInputStream(jsonString.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void processInputStream(InputStream inputStream) {
+        // Implement your processing logic here
+        System.out.println("Processing JSON: " + new String(inputStream.readAllBytes(), StandardCharsets.UTF_8));
+    }
+}
